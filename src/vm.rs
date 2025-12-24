@@ -13,6 +13,7 @@ use axaddrspace::{AddrSpace, GuestPhysAddr, HostPhysAddr, MappingFlags, device::
 use axdevice::{AxVmDeviceConfig, AxVmDevices};
 use axvcpu::{AxVCpu, AxVCpuExitReason, AxVCpuHal};
 use cpumask::CpuMask;
+use memory_addr::PhysAddr;
 
 use crate::config::{AxVMConfig, PhysCpuList};
 use crate::vcpu::{AxArchVCpuImpl, AxVCpuCreateConfig};
@@ -24,6 +25,9 @@ use crate::vcpu::get_sysreg_device;
 const VM_ASPACE_BASE: usize = 0x0;
 const VM_ASPACE_SIZE: usize = 0x7fff_ffff_f000;
 
+struct AddrSpacePtr(*const ());
+unsafe impl Send for AddrSpacePtr {}
+unsafe impl Sync for AddrSpacePtr {}
 /// A vCPU with architecture-independent interface.
 #[allow(type_alias_bounds)]
 type VCpu<U: AxVCpuHal> = AxVCpu<AxArchVCpuImpl<U>>;
@@ -252,9 +256,22 @@ impl<H: AxVMHal, U: AxVCpuHal> AxVM<H, U> {
             )?;
         }
 
-        let mut devices = axdevice::AxVmDevices::new(AxVmDeviceConfig {
-            emu_configs: inner_mut.config.emu_devices().to_vec(),
-        });
+        let addr_space_ptr = AddrSpacePtr(&inner_mut.address_space as *const _ as *const ());
+
+        let translate_fn: Arc<Box<dyn Fn(GuestPhysAddr) -> Option<(PhysAddr, usize)> + Send + Sync>> =
+            Arc::new(Box::new(move |guest_addr: GuestPhysAddr| unsafe {
+                let wrapper = &addr_space_ptr;
+                let addr_space = &*(wrapper.0 as *const AddrSpace<H::PagingHandler>);
+
+                addr_space.translate_and_get_limit(guest_addr)
+            }));
+
+        let mut devices = axdevice::AxVmDevices::new(
+            AxVmDeviceConfig {
+                emu_configs: inner_mut.config.emu_devices().to_vec(),
+            },
+            translate_fn.clone(),
+        );
 
         #[cfg(target_arch = "aarch64")]
         {
@@ -873,6 +890,65 @@ impl<H: AxVMHal, U: AxVCpuHal> AxVM<H, U> {
         }
 
         info!("VM[{}] resources cleanup completed", self.id());
+    }
+
+        /// Establish a console connection between VMs.
+    pub fn establish_console_connection(
+        &self,
+        owner_vm_ids: &[usize],
+        peer_vm_ids: &[usize],
+        buffer_addrs: &[usize],
+    ) -> AxResult {
+        if owner_vm_ids.len() != peer_vm_ids.len() || peer_vm_ids.len() != buffer_addrs.len() {
+            return ax_err!(InvalidInput, "VM IDs and buffer addresses length mismatch");
+        }
+        if let Some(console) = self.get_devices().get_virtio_console() {
+            for ((&owner_id, &peer_id), &buf_addr) in owner_vm_ids.iter().zip(peer_vm_ids.iter()).zip(buffer_addrs.iter()) {
+                if owner_id == self.id() {
+                    // This VM is the sender
+                    info!("VM[{}] establishing console send connection to VM[{}]", self.id(), peer_id);
+                    console.add_send_connection(peer_id, buf_addr);
+                } else if peer_id == self.id() {
+                    // This VM is the receiver
+                    info!("VM[{}] establishing console recv connection from VM[{}]", self.id(), owner_id);
+                    console.add_recv_connection(owner_id, buf_addr);
+                } else {
+                    warn!("VM[{}] not involved in this console connection: owner={}, peer={}", self.id(), owner_id, peer_id);
+                }
+            }
+            Ok(())
+        } else {
+            ax_err!(NotFound, "VirtioConsole device not found")
+        }
+    }
+
+    /// Remove a console connection between VMs.
+    pub fn remove_console_connection(
+        &self,
+        owner_vm_ids: &[usize],
+        peer_vm_ids: &[usize],
+    ) -> AxResult {
+        if owner_vm_ids.len() != peer_vm_ids.len() {
+            return ax_err!(InvalidInput, "VM IDs length mismatch");
+        }
+        if let Some(console) = self.get_devices().get_virtio_console() {
+            for (&owner_id, &peer_id) in owner_vm_ids.iter().zip(peer_vm_ids.iter()) {
+                if owner_id == self.id() {
+                    // This VM is the sender
+                    info!("VM[{}] Removing console send connection to VM[{}]", self.id(), peer_id);
+                    console.remove_send_connection(peer_id);
+                } else if peer_id == self.id() {
+                    // This VM is the receiver
+                    info!("VM[{}] Removing console recv connection from VM[{}]", self.id(), owner_id);
+                    console.remove_recv_connection(owner_id);
+                } else {
+                    warn!("VM[{}] not involved in this console connection: owner={}, peer={}", self.id(), owner_id, peer_id);
+                }
+            }
+            Ok(())
+        } else {
+            ax_err!(NotFound, "VirtioConsole device not found")
+        }
     }
 }
 
