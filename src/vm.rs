@@ -556,9 +556,6 @@ impl<H: AxVMHal, U: AxVCpuHal> AxVM<H, U> {
         // It is not supported to inject interrupt to a vcpu in another VM yet.
         //
         // It may be supported in the future, as a essential feature for cross-VM communication.
-        if H::current_vm_id() != self.id() {
-            panic!("Injecting interrupt to a vcpu in another VM is not supported");
-        }
 
         for target_vcpu in &targets {
             H::inject_irq_to_vcpu(vm_id, target_vcpu, irq)?;
