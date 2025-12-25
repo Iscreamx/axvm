@@ -25,9 +25,6 @@ use crate::vcpu::get_sysreg_device;
 const VM_ASPACE_BASE: usize = 0x0;
 const VM_ASPACE_SIZE: usize = 0x7fff_ffff_f000;
 
-struct AddrSpacePtr(*const ());
-unsafe impl Send for AddrSpacePtr {}
-unsafe impl Sync for AddrSpacePtr {}
 /// A vCPU with architecture-independent interface.
 #[allow(type_alias_bounds)]
 type VCpu<U: AxVCpuHal> = AxVCpu<AxArchVCpuImpl<U>>;
@@ -256,21 +253,10 @@ impl<H: AxVMHal, U: AxVCpuHal> AxVM<H, U> {
             )?;
         }
 
-        let addr_space_ptr = AddrSpacePtr(&inner_mut.address_space as *const _ as *const ());
-
-        let translate_fn: Arc<Box<dyn Fn(GuestPhysAddr) -> Option<(PhysAddr, usize)> + Send + Sync>> =
-            Arc::new(Box::new(move |guest_addr: GuestPhysAddr| unsafe {
-                let wrapper = &addr_space_ptr;
-                let addr_space = &*(wrapper.0 as *const AddrSpace<H::PagingHandler>);
-
-                addr_space.translate_and_get_limit(guest_addr)
-            }));
-
         let mut devices = axdevice::AxVmDevices::new(
             AxVmDeviceConfig {
                 emu_configs: inner_mut.config.emu_devices().to_vec(),
             },
-            translate_fn.clone(),
         );
 
         #[cfg(target_arch = "aarch64")]
@@ -949,6 +935,11 @@ impl<H: AxVMHal, U: AxVCpuHal> AxVM<H, U> {
         } else {
             ax_err!(NotFound, "VirtioConsole device not found")
         }
+    }
+
+    /// Translates a guest physical address (GPA) to a host physical address (HPA).
+    pub fn translate_gpa(&self, gpa: GuestPhysAddr) ->  Option<(PhysAddr, usize)>  {
+        self.inner_mut.lock().address_space.translate_and_get_limit(gpa)
     }
 }
 
