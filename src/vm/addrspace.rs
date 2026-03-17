@@ -194,6 +194,84 @@ impl VmAddrSpace {
         Ok(gpa)
     }
 
+    pub fn gpa_to_hpa(&self, gpa: GuestPhysAddr) -> Option<HostPhysAddr> {
+        self.aspace
+            .lock()
+            .translate(gpa.as_usize().into())
+            .map(|hpa| HostPhysAddr::from_usize(hpa.as_usize()))
+    }
+
+    pub fn read_guest_u64(&self, gpa: GuestPhysAddr) -> anyhow::Result<u64> {
+        const WIDTH: usize = core::mem::size_of::<u64>();
+        let parts = self
+            .aspace
+            .lock()
+            .translated_byte_buffer(gpa.as_usize().into(), WIDTH)
+            .ok_or_else(|| anyhow!("GPA {:#x} is not mapped", gpa.as_usize()))?;
+
+        let mut raw = [0u8; WIDTH];
+        let mut copied = 0usize;
+        for part in parts {
+            if copied >= WIDTH {
+                break;
+            }
+            let len = core::cmp::min(part.len(), WIDTH - copied);
+            raw[copied..copied + len].copy_from_slice(&part[..len]);
+            copied += len;
+        }
+        if copied != WIDTH {
+            return Err(anyhow!(
+                "short read from GPA {:#x}: expect {} bytes, got {}",
+                gpa.as_usize(),
+                WIDTH,
+                copied
+            ));
+        }
+
+        Ok(u64::from_le_bytes(raw))
+    }
+
+    pub fn query_gpa_mapping(
+        &self,
+        gpa: GuestPhysAddr,
+    ) -> anyhow::Result<(HostPhysAddr, MappingFlags, usize)> {
+        let aspace = self.aspace.lock();
+        let (hpa, flags, page_size) = aspace
+            .page_table()
+            .query(gpa.as_usize().into())
+            .map_err(|e| anyhow!("query GPA mapping failed: {e:?}"))?;
+        Ok((
+            HostPhysAddr::from_usize(hpa.as_usize()),
+            flags,
+            page_size as usize,
+        ))
+    }
+
+    pub fn set_gpa_executable(&self, gpa: GuestPhysAddr, executable: bool) -> anyhow::Result<()> {
+        let mut aspace = self.aspace.lock();
+        let (_, _, page_size) = aspace
+            .page_table()
+            .query(gpa.as_usize().into())
+            .map_err(|e| anyhow!("query GPA mapping failed: {e:?}"))?;
+        let size = page_size as usize;
+        let start = GuestPhysAddr::from_usize(gpa.as_usize().align_down(size));
+        aspace
+            .protect(start.as_usize().into(), size, |flags| {
+                let mut new_flags = flags;
+                if executable {
+                    new_flags |= MappingFlags::EXECUTE;
+                } else {
+                    new_flags.remove(MappingFlags::EXECUTE);
+                }
+                if new_flags == flags {
+                    None
+                } else {
+                    Some(new_flags)
+                }
+            })
+            .map_err(|e| anyhow!("set Stage-2 execute permission failed: {e:?}"))
+    }
+
     pub fn map_passthrough_regions(&self) -> anyhow::Result<()> {
         let mut g = self.aspace.lock();
         for region in self

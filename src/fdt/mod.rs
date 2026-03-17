@@ -101,7 +101,11 @@ impl FdtBuilder {
         Ok(())
     }
 
-    pub fn setup_chosen(&mut self, initrd: Option<(GuestPhysAddr, usize)>) -> anyhow::Result<()> {
+    pub fn setup_chosen(
+        &mut self,
+        initrd: Option<(GuestPhysAddr, usize)>,
+        bootargs_override: Option<&str>,
+    ) -> anyhow::Result<()> {
         let mut node = self
             .fdt
             .get_by_path_mut("/chosen")
@@ -129,7 +133,15 @@ impl FdtBuilder {
             node.node.remove_property("linux,initrd-end");
         };
 
-        if let Some(args) = node.node.get_property_mut("bootargs")
+        if let Some(bootargs) = bootargs_override {
+            if let Some(args) = node.node.get_property_mut("bootargs") {
+                args.set_string(bootargs);
+            } else {
+                let mut args = Property::new("bootargs", vec![]);
+                args.set_string(bootargs);
+                node.node.add_property(args);
+            }
+        } else if let Some(args) = node.node.get_property_mut("bootargs")
             && let Some(s) = args.as_str()
         {
             let bootargs = s.replace(" ro ", " rw ");

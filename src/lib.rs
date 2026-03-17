@@ -24,6 +24,7 @@ pub(crate) mod arch;
 mod fdt;
 mod vcpu;
 mod vm;
+mod vmexit;
 
 pub mod config;
 pub mod vhal;
@@ -32,6 +33,7 @@ pub use axvm_types::addr::*;
 pub use config::AxVMConfig;
 pub use vhal::cpu::CpuId;
 pub use vm::*;
+pub use vmexit::register_vmexit_handler;
 
 /// Enable hardware virtualization support.
 pub fn enable_viretualization() -> anyhow::Result<()> {

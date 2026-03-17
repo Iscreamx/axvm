@@ -6,6 +6,8 @@ version = "0.1.0"
 [features]
 default = ["vmx"]
 vmx = []
+hprobe = ["arm_vcpu/hprobe"]
+guest-kprobe = ["arm_vcpu/guest-kprobe"]
 # Note: 4-level-ept support is now provided through dynamic page table selection in axaddrspace
 # The feature gate is no longer needed
 

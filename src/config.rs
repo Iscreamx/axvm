@@ -49,6 +49,7 @@ pub struct AxVMConfig {
     pub name: String,
     pub cpu_num: CpuNumType,
     pub image_config: VMImagesConfig,
+    pub cmdline: Option<String>,
     pub memory_regions: Vec<MemoryKind>,
     pub interrupt_mode: VMInterruptMode,
 }
@@ -90,8 +91,25 @@ impl AxVMConfig {
         &self.image_config
     }
 
+    /// Returns the kernel command line override, if present.
+    pub fn cmdline(&self) -> Option<&str> {
+        self.cmdline.as_deref()
+    }
+
     /// Returns the interrupt mode of the VM.
     pub fn interrupt_mode(&self) -> VMInterruptMode {
         self.interrupt_mode
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AxVMConfig;
+
+    #[test]
+    fn default_vm_config_keeps_cmdline_slot() {
+        let cfg = AxVMConfig::default();
+
+        assert!(cfg.cmdline.is_none());
     }
 }

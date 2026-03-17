@@ -1,3 +1,4 @@
+use core::sync::atomic::{AtomicU64, Ordering};
 use core::{
     fmt::{self, Debug},
     ops::Deref,
@@ -22,6 +23,7 @@ pub(crate) struct VmDataInner {
     pub status: AtomicState,
     pub memory_size: usize,
     pub vcpu_num: usize,
+    pub last_ttbr1_el1: AtomicU64,
     error: RwLock<Option<RunError>>,
 }
 
@@ -49,6 +51,7 @@ impl VmDataInner {
             error: RwLock::new(None),
             memory_size,
             vcpu_num,
+            last_ttbr1_el1: AtomicU64::new(0),
         }
     }
 
@@ -104,6 +107,16 @@ impl VmDataInner {
             },
             None => Ok(()),
         }
+    }
+
+    #[inline]
+    pub fn last_ttbr1_el1(&self) -> u64 {
+        self.last_ttbr1_el1.load(Ordering::Acquire)
+    }
+
+    #[inline]
+    pub(crate) fn set_last_ttbr1_el1(&self, ttbr1_el1: u64) {
+        self.last_ttbr1_el1.store(ttbr1_el1, Ordering::Release);
     }
 }
 
