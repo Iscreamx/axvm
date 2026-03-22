@@ -91,4 +91,65 @@ impl Vm {
     pub fn guest_ttbr1_el1(&self) -> u64 {
         self.data.last_ttbr1_el1()
     }
+
+    /// Return last observed guest TTBR0_EL1 saved on VM exits.
+    pub fn guest_ttbr0_el1(&self) -> u64 {
+        self.data.last_ttbr0_el1()
+    }
+
+    /// Return last observed guest CONTEXTIDR_EL1 saved on VM exits.
+    pub fn guest_contextidr_el1(&self) -> u32 {
+        self.data.last_contextidr_el1() as u32
+    }
+
+    /// Return last observed guest TPIDR_EL0 saved on VM exits.
+    pub fn guest_tpidr_el0(&self) -> u64 {
+        self.data.last_tpidr_el0()
+    }
+
+    /// Return guest SPSR captured at the latest VM exit.
+    pub fn guest_spsr(&self) -> u64 {
+        self.data.last_guest_spsr()
+    }
+
+    /// Cache guest CPU state observed at the latest VM exit.
+    pub fn record_guest_exit_state(
+        &self,
+        ttbr0_el1: u64,
+        ttbr1_el1: u64,
+        contextidr_el1: u32,
+        tpidr_el0: u64,
+        guest_spsr: u64,
+    ) {
+        self.data.set_last_ttbr0_el1(ttbr0_el1);
+        self.data.set_last_ttbr1_el1(ttbr1_el1);
+        self.data.set_last_contextidr_el1(contextidr_el1);
+        self.data.set_last_tpidr_el0(tpidr_el0);
+        self.data.set_last_guest_spsr(guest_spsr);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Vm;
+    use crate::{AxVMConfig, data::VmData};
+
+    fn new_test_vm() -> Vm {
+        Vm {
+            data: VmData::new(AxVMConfig::default()).unwrap(),
+        }
+    }
+
+    #[test]
+    fn record_guest_exit_state_updates_cached_registers() {
+        let vm = new_test_vm();
+
+        vm.record_guest_exit_state(0x1111, 0x2222, 0x3333, 0x4444, 0x5555);
+
+        assert_eq!(vm.guest_ttbr0_el1(), 0x1111);
+        assert_eq!(vm.guest_ttbr1_el1(), 0x2222);
+        assert_eq!(vm.guest_contextidr_el1(), 0x3333);
+        assert_eq!(vm.guest_tpidr_el0(), 0x4444);
+        assert_eq!(vm.guest_spsr(), 0x5555);
+    }
 }

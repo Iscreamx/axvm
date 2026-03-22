@@ -23,7 +23,11 @@ pub(crate) struct VmDataInner {
     pub status: AtomicState,
     pub memory_size: usize,
     pub vcpu_num: usize,
+    pub last_ttbr0_el1: AtomicU64,
     pub last_ttbr1_el1: AtomicU64,
+    pub last_contextidr_el1: AtomicU64,
+    pub last_tpidr_el0: AtomicU64,
+    pub last_guest_spsr: AtomicU64,
     error: RwLock<Option<RunError>>,
 }
 
@@ -51,7 +55,11 @@ impl VmDataInner {
             error: RwLock::new(None),
             memory_size,
             vcpu_num,
+            last_ttbr0_el1: AtomicU64::new(0),
             last_ttbr1_el1: AtomicU64::new(0),
+            last_contextidr_el1: AtomicU64::new(0),
+            last_tpidr_el0: AtomicU64::new(0),
+            last_guest_spsr: AtomicU64::new(0),
         }
     }
 
@@ -115,8 +123,49 @@ impl VmDataInner {
     }
 
     #[inline]
+    pub fn last_ttbr0_el1(&self) -> u64 {
+        self.last_ttbr0_el1.load(Ordering::Acquire)
+    }
+
+    #[inline]
+    pub fn last_contextidr_el1(&self) -> u64 {
+        self.last_contextidr_el1.load(Ordering::Acquire)
+    }
+
+    #[inline]
+    pub fn last_tpidr_el0(&self) -> u64 {
+        self.last_tpidr_el0.load(Ordering::Acquire)
+    }
+
+    #[inline]
+    pub fn last_guest_spsr(&self) -> u64 {
+        self.last_guest_spsr.load(Ordering::Acquire)
+    }
+
+    #[inline]
+    pub(crate) fn set_last_ttbr0_el1(&self, ttbr0_el1: u64) {
+        self.last_ttbr0_el1.store(ttbr0_el1, Ordering::Release);
+    }
+
+    #[inline]
     pub(crate) fn set_last_ttbr1_el1(&self, ttbr1_el1: u64) {
         self.last_ttbr1_el1.store(ttbr1_el1, Ordering::Release);
+    }
+
+    #[inline]
+    pub(crate) fn set_last_contextidr_el1(&self, contextidr_el1: u32) {
+        self.last_contextidr_el1
+            .store(contextidr_el1 as u64, Ordering::Release);
+    }
+
+    #[inline]
+    pub(crate) fn set_last_tpidr_el0(&self, tpidr_el0: u64) {
+        self.last_tpidr_el0.store(tpidr_el0, Ordering::Release);
+    }
+
+    #[inline]
+    pub(crate) fn set_last_guest_spsr(&self, guest_spsr: u64) {
+        self.last_guest_spsr.store(guest_spsr, Ordering::Release);
     }
 }
 

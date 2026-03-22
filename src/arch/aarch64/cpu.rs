@@ -137,7 +137,12 @@ impl VCpuOp for VCpu {
         while self.is_active() {
             debug!("vCPU {} entering guest", self.bind_id());
             let exit_reason = self.vcpu.run().map_err(|e| anyhow!("{e}"))?;
-            self.vm()?.set_last_ttbr1_el1(self.vcpu.guest_ttbr1_el1());
+            let vm = self.vm()?;
+            vm.set_last_ttbr0_el1(self.vcpu.guest_ttbr0_el1());
+            vm.set_last_ttbr1_el1(self.vcpu.guest_ttbr1_el1());
+            vm.set_last_contextidr_el1(self.vcpu.guest_contextidr_el1());
+            vm.set_last_tpidr_el0(self.vcpu.guest_tpidr_el0());
+            vm.set_last_guest_spsr(self.vcpu.guest_spsr());
             crate::vmexit::notify_vmexit(usize::from(self.vm_id()) as u32);
             debug!(
                 "vCPU {} exited with reason: {:?}",
