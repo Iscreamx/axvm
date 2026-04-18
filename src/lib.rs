@@ -29,6 +29,8 @@ mod vmexit;
 pub mod config;
 pub mod vhal;
 
+#[cfg(all(target_arch = "aarch64", feature = "hprobe"))]
+pub use arch::install_trap_vector;
 pub use axvm_types::addr::*;
 pub use config::AxVMConfig;
 pub use vhal::cpu::CpuId;
